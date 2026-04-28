@@ -706,4 +706,131 @@ CONFIDENCE: ${confidence}%
 EXPLANATION: ${explanation}`;
 }
 
+async function runPrediction() {
+  const btn = document.getElementById("predict-btn");
+  const box = document.getElementById("result-box");
+  const verdict = document.getElementById("result-verdict");
+  const sub = document.getElementById("result-sub");
+  const analysis = document.getElementById("result-analysis");
+  const circle = document.getElementById("conf-circle");
+  const confVal = document.getElementById("conf-val");
+  const header = document.getElementById("result-header");
+  const icon = document.getElementById("result-icon");
+
+  const age = document.getElementById("age").value;
+  const gender = document.getElementById("gender").value;
+  const disease = document.getElementById("disease").value;
+  const site = document.getElementById("site").value;
+  const stage = document.getElementById("stage").value;
+  const smoking = document.getElementById("smoking").value;
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>&nbsp; Processing…';
+  box.style.display = "none";
+
+  const prompt = `Patient clinical profile (CPTAC-3 context):
+- Age at diagnosis: ${age} years
+- Biological sex: ${gender}
+- Histologic disease type: ${disease}
+- Primary site: ${site}
+- AJCC pathologic stage: ${stage}
+- Tobacco smoking status: ${smoking}
+
+Based on CPTAC-3 Random Forest model patterns:
+1. Predict vital status: ALIVE or DEAD (most probable outcome)
+2. Estimate confidence percentage (60–95%)
+3. Provide a precise 3-4 sentence clinical explanation: which features drove this prediction, referencing specific dataset statistics (stage survival rates, age distribution, gender mortality data).
+
+Respond EXACTLY in this format with no preamble:
+VERDICT: [ALIVE or DEAD]
+CONFIDENCE: [number]%
+EXPLANATION: [3-4 sentence clinical explanation]`;
+
+  try {
+    const text = await callClaude([{ role: "user", content: prompt }], SYSTEM_PROMPT);
+    const vM = text.match(/VERDICT:\s*(ALIVE|DEAD)/i);
+    const cM = text.match(/CONFIDENCE:\s*(\d+)%/i);
+    const eM = text.match(/EXPLANATION:\s*([\s\S]+)/i);
+
+    const v = vM ? vM[1].toUpperCase() : "ALIVE";
+    const c = cM ? cM[1] : "72";
+    const e = eM ? eM[1].trim() : text;
+    const isAlive = v === "ALIVE";
+
+    header.className = "result-header " + (isAlive ? "alive" : "dead");
+    icon.innerHTML = isAlive
+      ? '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>'
+      : '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>';
+
+    verdict.textContent = isAlive ? "Predicted Vital Status: ALIVE" : "Predicted Vital Status: DECEASED";
+    sub.textContent = `${stage} · ${site} Cancer · Age ${age}y · ${gender}`;
+    confVal.textContent = c + "%";
+    circle.className = "conf-circle " + (isAlive ? "alive" : "dead");
+
+    analysis.textContent = "";
+    box.style.display = "block";
+
+    let i = 0;
+    analysis.classList.add("typing-cursor");
+    const iv = setInterval(() => {
+      if (i < e.length) { analysis.textContent += e[i++]; }
+      else { clearInterval(iv); analysis.classList.remove("typing-cursor"); }
+    }, 10);
+
+  } catch (err) {
+    header.className = "result-header";
+    icon.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5"><path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>';
+    verdict.textContent = "Connection Error";
+    sub.textContent = "Unable to reach AI backend";
+    confVal.textContent = "—";
+    analysis.textContent = err.message;
+    box.style.display = "block";
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = "Run Survival Prediction";
+}
+
+async function sendChat() {
+  const input = document.getElementById("chat-input");
+  const btn = document.getElementById("chat-btn");
+  const msg = input.value.trim();
+  if (!msg) return;
+
+  appendMsg(msg, "user");
+  input.value = "";
+  btn.disabled = true; btn.textContent = "…";
+
+  chatHistory.push({ role: "user", content: msg });
+  const loadEl = appendMsg("Processing query…", "ai");
+  loadEl.classList.add("typing-cursor");
+
+  try {
+    const reply = await callClaude(chatHistory, SYSTEM_PROMPT + "\n\n" + PROJECT_CONTEXT);
+    chatHistory.push({ role: "assistant", content: reply });
+    loadEl.textContent = reply;
+  } catch (err) {
+    loadEl.textContent = "Connection failed. Please try again.";
+  }
+  loadEl.classList.remove("typing-cursor");
+  btn.disabled = false; btn.textContent = "Send";
+}
+
+function askQuick(q) {
+  document.getElementById("chat-input").value = q;
+  sendChat();
+}
+
+function appendMsg(text, role) {
+  const area = document.getElementById("chat-area");
+  const el = document.createElement("div");
+  el.className = "msg " + role;
+  el.textContent = text;
+  area.appendChild(el);
+  area.scrollTop = area.scrollHeight;
+  return el;
+}
+</script>
+</body>
+</html>
   
